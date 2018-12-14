@@ -126,11 +126,11 @@ def idris_binary(name, srcs=None, deps=[]):
 
 def _idris_library_impl(ctx):
     ipz = ctx.outputs.ipz
-    ipkg = ctx.actions.declare_file("%s.ipkg" % ctx.attr.name) 
+    ipkg = ctx.actions.declare_file("%s.ipkg" % ctx.attr.name)
     wl = len(ctx.label.workspace_root)
     l = 0 if wl == 0 else wl + 1
     ws = "." if wl == 0 else ctx.label.workspace_root
-    modules = [_remove_extension(f)[l:].replace("/", ".") for f in ctx.files.srcs]
+    modules = [_remove_extension(f, ctx.attr.strip_prefix)[l:].replace("/", ".") for f in ctx.files.srcs]
     ipzs_files = get_transitive_ipzs(ctx.attr.deps)
     ipzs = [ mf.path for mf in ipzs_files.to_list()]
     args = " ".join([arg
@@ -142,7 +142,7 @@ def _idris_library_impl(ctx):
     # Action to call the script.
     ctx.actions.write(
       output = ipkg,
-      content = "package %s\n\nmodules = %s" % (ctx.attr.name, ", ".join(modules)))
+      content = make_pkg(ctx.attr.name, ", ".join(modules), ctx.attr.strip_prefix.strip("/")))
     ctx.actions.run_shell(
         inputs = inputs,
         outputs = [ipz],
@@ -157,6 +157,11 @@ def _idris_library_impl(ctx):
       SelfIPZ(ipz = ipz),
     ]
 
+def make_pkg(name, modules, sourcedir):
+  if sourcedir:
+    return "package %s\n\nmodules = %s\n\nsourcedir = %s" % (name, modules, sourcedir)
+  return "package %s\n\nmodules = %s" % (name, modules)
+
 idris_library_rule = rule(
   implementation = _idris_library_impl,
   outputs = { "ipz": "%{name}.ipz" },
@@ -165,6 +170,7 @@ idris_library_rule = rule(
         allow_files = True,
         mandatory = True,),
     "deps": attr.label_list(allow_files = True),
+    "strip_prefix": attr.string(),
     "_idris": attr.label(
         executable = True,
         cfg = "host",
@@ -179,11 +185,12 @@ idris_library_rule = rule(
   executable = False,
 )
 
-def idris_library(name, srcs=None, deps=[], visibility=None):
+def idris_library(name, srcs=None, deps=[], strip_prefix="", visibility=None):
   idris_library_rule(
     name = name,
     deps = deps,
     srcs = native.glob(["*.idr"]) if srcs == None else srcs,
+    strip_prefix = strip_prefix,
     visibility = visibility,
   )
   idris_console_rule(
@@ -228,7 +235,7 @@ main = __run >>= __finaliseTestRunning
       imports = "\n".join([("import %s" % m) for m in modules]),
       tests = ", ".join([("%s.test" % m) for m in modules]),
     )
-    mainModule = ctx.actions.declare_file("__main_module.idr") 
+    mainModule = ctx.actions.declare_file("__main_module.idr")
     ctx.actions.write(output = mainModule, content = main)
     ipzs_files = get_transitive_ipzs(ctx.attr.deps)
     ipzs = [ mf.path for mf in ipzs_files.to_list()]
@@ -288,7 +295,7 @@ def idris_test(name, srcs=None, deps=[], visibility=None):
 #####################################
 
 
-def _remove_extension(p):
+def _remove_extension(p, prefix):
     b = p.basename
     last_dot_in_basename = b.rfind(".")
 
@@ -298,10 +305,16 @@ def _remove_extension(p):
         return (p.path, "")
 
     dot_distance_from_end = len(b) - last_dot_in_basename
-    return p.path[:-dot_distance_from_end]
+    return strip_prefix(p.path[:-dot_distance_from_end], prefix)
 
 def get_transitive_ipzs(deps):
   ipzs = [dep[SelfIPZ].ipz for dep in deps]
   return depset(
     ipzs,
     transitive = [dep[DependingIPZs].transitive_ipzs for dep in deps])
+
+def strip_prefix(s, strip_prefix):
+    """Returns the string s, stripped of strip_prefix."""
+    if s.startswith(strip_prefix):
+        return s[len(strip_prefix):]
+    return s
