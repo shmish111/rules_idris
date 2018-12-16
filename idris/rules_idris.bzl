@@ -73,7 +73,7 @@ def _idris_binary_impl(ctx):
     ipzs = [ mf.path for mf in ipzs_files.to_list()]
     args =  [arg
              for m in ipzs
-             for arg in ["--ip", m]] + [f.path for f in ctx.files.srcs] + ["-o", ctx.outputs.bin.path]
+             for arg in ["--ip", m]] + ["-i", ctx.attr.strip_prefix] + [strip_prefix(f.path, ctx.attr.strip_prefix) for f in ctx.files.main] + ["-o", ctx.outputs.bin.path]
 
     # Action to call the script.
     ctx.actions.run_shell(
@@ -82,7 +82,7 @@ def _idris_binary_impl(ctx):
         arguments = args,
         progress_message = "progress",
         tools = [ctx.executable._idris, ctx.executable._idris_packager],
-        command = "HOME=`pwd` %s idris %s \"$@\"" % (ctx.executable._idris_packager.path, ctx.executable._idris.path),
+        command = "export THE_PATH=`pwd` && cd $(dirname %s) && HOME=`pwd` $THE_PATH/%s idris $THE_PATH/%s \"$@\"" % (ctx.build_file_path, ctx.executable._idris_packager.path, ctx.executable._idris.path),
     )
     return [DefaultInfo(executable = ctx.outputs.bin)]
 
@@ -94,6 +94,8 @@ idris_binary_rule = rule(
         allow_files = True,
         mandatory = True,),
     "deps": attr.label_list(),
+    "strip_prefix": attr.string(),
+    "main": attr.label(allow_files = True),
     "_idris": attr.label(
         executable = True,
         cfg = "host",
@@ -108,11 +110,13 @@ idris_binary_rule = rule(
   executable = True,
 )
 
-def idris_binary(name, srcs=None, deps=[]):
+def idris_binary(name, main, srcs=None, deps=[], strip_prefix=None):
   idris_binary_rule(
     name = name,
+    main = main,
     deps = deps,
     srcs = native.glob(["*.idr"]) if srcs == None else srcs,
+    strip_prefix = "./" if strip_prefix == None else strip_prefix,
   )
   idris_console_rule(
     name = "%s_repl" % name,
@@ -142,7 +146,7 @@ def _idris_library_impl(ctx):
     # Action to call the script.
     ctx.actions.write(
       output = ipkg,
-      content = make_pkg(ctx.attr.name, ", ".join(modules), ctx.attr.strip_prefix.strip("/")))
+      content = make_pkg(ctx.attr.name, ctx.attr.opts, ", ".join(modules), ctx.attr.strip_prefix.strip("/")))
     ctx.actions.run_shell(
         inputs = inputs,
         outputs = [ipz],
@@ -157,10 +161,10 @@ def _idris_library_impl(ctx):
       SelfIPZ(ipz = ipz),
     ]
 
-def make_pkg(name, modules, sourcedir):
+def make_pkg(name, opts, modules, sourcedir):
   if sourcedir:
-    return "package %s\n\nmodules = %s\n\nsourcedir = %s" % (name, modules, sourcedir)
-  return "package %s\n\nmodules = %s" % (name, modules)
+    return "package %s\n\nopts = \"%s\"\n\nmodules = %s\n\nsourcedir = %s" % (name, opts, modules, sourcedir)
+  return "package %s\n\nopts = \"%s\"\n\nmodules = %s" % (name, opts, modules)
 
 idris_library_rule = rule(
   implementation = _idris_library_impl,
@@ -171,6 +175,7 @@ idris_library_rule = rule(
         mandatory = True,),
     "deps": attr.label_list(allow_files = True),
     "strip_prefix": attr.string(),
+    "opts": attr.string(),
     "_idris": attr.label(
         executable = True,
         cfg = "host",
@@ -185,12 +190,13 @@ idris_library_rule = rule(
   executable = False,
 )
 
-def idris_library(name, srcs=None, deps=[], strip_prefix="", visibility=None):
+def idris_library(name, srcs=None, deps=[], strip_prefix=None, opts=None, visibility=None):
   idris_library_rule(
     name = name,
     deps = deps,
     srcs = native.glob(["*.idr"]) if srcs == None else srcs,
     strip_prefix = strip_prefix,
+    opts = opts,
     visibility = visibility,
   )
   idris_console_rule(
