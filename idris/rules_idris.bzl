@@ -73,7 +73,7 @@ def _idris_binary_impl(ctx):
     ipzs = [ mf.path for mf in ipzs_files.to_list()]
     args =  [arg
              for m in ipzs
-             for arg in ["--ip", m]] + ["-i", ctx.attr.strip_prefix] + [strip_prefix(f.path, ctx.attr.strip_prefix) for f in ctx.files.main] + ["-o", ctx.outputs.bin.path]
+             for arg in ["--ip", m]] + [strip_prefix(f.path, ctx.attr.strip_prefix) for f in ctx.files.main]
 
     # Action to call the script.
     ctx.actions.run_shell(
@@ -82,7 +82,19 @@ def _idris_binary_impl(ctx):
         arguments = args,
         progress_message = "progress",
         tools = [ctx.executable._idris, ctx.executable._idris_packager],
-        command = "export THE_PATH=`pwd` && cd $(dirname %s) && HOME=`pwd` $THE_PATH/%s idris $THE_PATH/%s \"$@\"" % (ctx.build_file_path, ctx.executable._idris_packager.path, ctx.executable._idris.path),
+        command = """
+        export THE_PATH=`pwd` && \
+        export NIX_x86_64_apple_darwin_CFLAGS_COMPILE="-I/nix/store/55d1i8mzy9q6q1d6vhyk865kghglgblz-gmp-6.1.2-dev/include" && \
+        export NIX_x86_64_apple_darwin_CFLAGS_LINK="-L/nix/store/ac3ldds9ph2wka4lbwcb1q1glfcxx7sh-gmp-6.1.2/lib" && \
+        cd $(dirname {build_file_path}) && \
+        export HOME=`pwd` && \
+        cat $THE_PATH/{idris_path} && \
+        echo "$THE_PATH/{idris_path} $@ -o $THE_PATH/{bin_path}"
+        $THE_PATH/{idris_packager_path} idris $THE_PATH/{idris_path} "$@" "-o $THE_PATH/{bin_path}"
+        """.format(build_file_path = ctx.build_file_path,
+                   bin_path = ctx.outputs.bin.path,
+                   idris_packager_path = ctx.executable._idris_packager.path,
+                   idris_path = ctx.executable._idris.path),
     )
     return [DefaultInfo(executable = ctx.outputs.bin)]
 
@@ -133,7 +145,8 @@ def _idris_library_impl(ctx):
     ipkg = ctx.actions.declare_file("%s.ipkg" % ctx.attr.name)
     wl = len(ctx.label.workspace_root)
     l = 0 if wl == 0 else wl + 1
-    ws = "." if wl == 0 else ctx.label.workspace_root
+    ws_root = "." if wl == 0 else ctx.label.workspace_root
+    ws = "%s/%s" % (ws_root, ctx.attr.strip_prefix) if ctx.attr.strip_prefix else ws_root
     modules = [_remove_extension(f, ctx.attr.strip_prefix)[l:].replace("/", ".") for f in ctx.files.srcs]
     ipzs_files = get_transitive_ipzs(ctx.attr.deps)
     ipzs = [ mf.path for mf in ipzs_files.to_list()]
@@ -160,10 +173,10 @@ def _idris_library_impl(ctx):
       DefaultInfo(files = depset([ipz], transitive=[ipzs_files])),
       SelfIPZ(ipz = ipz),
     ]
-
+# TODO: https://github.com/idris-lang/Idris-dev/pull/4619 might need sourcedir = %s to be wrapped in ""
 def make_pkg(name, opts, modules, sourcedir):
-  if sourcedir:
-    return "package %s\n\nopts = \"%s\"\n\nmodules = %s\n\nsourcedir = %s" % (name, opts, modules, sourcedir)
+  # if sourcedir:
+  #   return "package %s\n\nopts = \"%s\"\n\nmodules = %s\n\nsourcedir = \"%s\"" % (name, opts, modules, sourcedir)
   return "package %s\n\nopts = \"%s\"\n\nmodules = %s" % (name, opts, modules)
 
 idris_library_rule = rule(

@@ -11,15 +11,15 @@ def loadIdrisPackagerRepositories():
   )
   git_repository(
     name = "idris_packager",
-    commit = "284488c94370aa45f69703d0b300c4f2244b279f",
-    remote = "https://github.com/BryghtWords/idris_packager.git"
+    commit = "b8359edbf551173024b7e57f23da0ad88efd4f69",
+    remote = "https://github.com/shmish111/idris_packager.git"
   )
 
 def loadNixRepositories():
   http_archive(
     name = "io_tweag_rules_nixpkgs",
-    strip_prefix = "rules_nixpkgs-4575647f3795fee2a8b732f97076a363907f7248",
-    urls = ["https://github.com/tweag/rules_nixpkgs/archive/4575647f3795fee2a8b732f97076a363907f7248.tar.gz"],
+    strip_prefix = "rules_nixpkgs-674766086cda88976394fbd608620740857e2535",
+    urls = ["https://github.com/tweag/rules_nixpkgs/archive/674766086cda88976394fbd608620740857e2535.tar.gz"],
   )
 
 def loadIdrisRepositories():
